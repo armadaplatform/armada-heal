@@ -20,7 +20,6 @@ def parse_args():
 @backoff.on_predicate(backoff.expo, lambda x: x.get('status') == 'error', max_tries=5, max_value=30)
 @backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=5, max_value=30)
 def requests_get_json(url, params=None):
-    print('get')
     r = requests.get(url, params)
     r.raise_for_status()
     return r.json()
