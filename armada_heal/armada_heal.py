@@ -4,6 +4,7 @@ import time
 import traceback
 from argparse import ArgumentParser
 
+import backoff
 import requests
 
 SUPERVISOR_PROGRAMS = ['armada_agent', 'run_health_checks', 'register_in_service_discovery']
@@ -16,11 +17,17 @@ def parse_args():
     return ap.parse_args()
 
 
+@backoff.on_predicate(backoff.expo, lambda x: x.get('status') == 'error', max_tries=5, max_value=30)
+@backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=5, max_value=30)
+def requests_get_json(url, params=None):
+    r = requests.get(url, params)
+    r.raise_for_status()
+    return r.json()
+
+
 def is_service_ok(microservice_id):
     try:
-
-        r = requests.get('http://localhost:8500/v1/agent/checks')
-        checks = r.json()
+        checks = requests_get_json('http://localhost:8500/v1/agent/checks')
         key = 'service:{}'.format(microservice_id)
         return checks[key]['Status'] in ('passing', 'warning')
     except Exception:
@@ -36,8 +43,8 @@ def main():
     args = parse_args()
     print('1. ===Prevent services from registering===')
     armada_port = 80 if __are_we_in_armada_container() else 8900
-    r = requests.get('http://localhost:{}/list'.format(armada_port), {'local': '1'})
-    services = r.json()['result']
+    r = requests_get_json('http://localhost:{}/list'.format(armada_port), {'local': '1'})
+    services = r['result']
     services = sorted((service for service in services if ':' not in service['name']),
                       key=lambda s: (s['name'], s['microservice_id']))
     for i, service in enumerate(services, start=1):
